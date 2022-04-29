@@ -1,20 +1,11 @@
-
-
-
+import numpy as np
+from fracture_model_1 import *
+from save_avalanches import *
+from numpy import array
+from parameters import *
+import time
 
 def main_function(N, lbda, lbda_J, lbda_f, rho, rep, filename):
-
-    start = time.time()
-
-
-    # vector defining the state of a bond 
-    # alpha[i] = 0: i'th bond is broken
-    # alpha[i] = 1: i'th bond is intact
-    alpha = np.ones(N)
-
-
-    import random
-
 
     data = []
 
@@ -31,19 +22,7 @@ def main_function(N, lbda, lbda_J, lbda_f, rho, rep, filename):
     end = time.time()
     print("total time: ", end - start)
 
-import numpy as np
-from fracture_model_1 import *
-from save_avalanches import *
-from numpy import array
-from parameters import *
-
-import time
-# import csv
-# import os
-# import configreader
-
-
-
 start = time.time()
+
 if __name__ == '__main__':
     main_function(N, lbda, lbda_J, lbda_f, rho, rep, filename)
