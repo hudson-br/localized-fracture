@@ -1,28 +1,33 @@
 import numpy as np
 from scipy import sparse
 from scipy.sparse.linalg import lgmres
+from scipy.sparse.linalg import cg
 
 class Fracture_Model_1:
-    def __init__ (self, system_size, lbda, lbda_J, lbda_f, rho):
+    def __init__ (self, system_size, lbda, lbda_J, lbda_f, rho, thresholds):
         self.N = system_size
         self.alpha = np.ones(system_size) 
+        self.health = sum(self.alpha)
+        self.health_temp = sum(self.alpha)
+        self.damage = []
         self.lbda = lbda
         self.lbda_J = lbda_J
         self.lbda_f = lbda_f
         self.rho = rho
-        self.number_of_avalanches = np.zeros(self.N-1)
-        self.thresholds = np.random.weibull(self.rho, self.N)
-        self.distance_to_failure = []
+        self.thresholds = thresholds
         self.f = np.zeros(self.N + 1)
         self.x = np.zeros(self.N + 1)
-        self.zz = []
-        self.force = []
+        self.z = 0.01
+        self.tol = 0#1/self.N**2
+        self.rigidity_matrix()
+        self.x = self.solve()
+        # print(self.K.toarray())
 
 
-    def rigidity_matrix(self, alpha):
+    def rigidity_matrix(self):
         I = np.arange(self.N)
         J = np.arange(self.N)
-        Diagonal = alpha + self.lbda + 2.*self.lbda_J
+        Diagonal = self.alpha + self.lbda + 2.*self.lbda_J
         self.K = sparse.coo_matrix((Diagonal,(I,J)),shape=(self.N+1,self.N+1)).tocsr()
 
         I_upper_diagonal = np.arange(self.N-1)
@@ -31,7 +36,7 @@ class Fracture_Model_1:
 
         I_lower_diagonal = np.arange(1,self.N)
         J_lower_diagonal = np.arange(self.N - 1)
-        Lower_diagonal = -self.lbda_J*np.ones(self.N - 1)
+        Lower_diagonal = - self.lbda_J*np.ones(self.N - 1)
 
         K_upper_diagonal = sparse.coo_matrix((Upper_diagonal,(I_upper_diagonal,J_upper_diagonal)),shape=(self.N+1,self.N+1)).tocsr()
         K_lower_diagonal = sparse.coo_matrix((Lower_diagonal,(I_lower_diagonal,J_lower_diagonal)),shape=(self.N+1,self.N+1)).tocsr()
@@ -54,70 +59,93 @@ class Fracture_Model_1:
 
         self.K =   self.K + K_upper_diagonal + K_lower_diagonal + K_right_collumn + K_lower_row + K_NN + K_periodic_bc
 
-    def update_rigidity_matrix(self, alpha_):
+    def update_rigidity_matrix(self):
         I = np.arange(self.N)
         J = np.arange(self.N)
-        Diagonal_alpha = 1.- alpha_
+        Diagonal_alpha = 1.- self.alpha
         K_update = sparse.coo_matrix((Diagonal_alpha,(I,J)),shape=(self.N+1,self.N+1)).tocsr()
         self.K = self.K - K_update
         
-    def solve(self, z):
-        self.f[self.N] = self.N*self.lbda_f*z
-        x, exitcode = lgmres(self.K, self.f, x0 = self.x, atol = 1e-6)
+    def solve(self):
+        self.f[self.N] = self.N*self.lbda_f*self.z
+        x, exitcode = lgmres(self.K, self.f, x0 = self.x)#, atol = 1e-5)
         return x
+
+    def break_weakest_link(self,aa):
+        weakest = np.min(np.multiply(self.thresholds,aa)[np.nonzero(np.multiply(self.thresholds,aa))])
+        ind = np.where(self.thresholds == weakest)[0]
+        self.alpha[ind] = 0
+
+        
+    def check_stability(self):
+        self.health_temp = sum(self.alpha)
+        self.rigidity_matrix()
+        self.x = self.solve()
+        # print(self.x)
+        # Solving the system
+        # Looking for broken bonds
+                # get all broken units
+        a = 1*(self.x[0:self.N] < self.thresholds - self.tol)
+        # remove the previously broken bonds
+        aa = self.alpha - a
+
+        while np.sum(aa)>0:
+            self.break_weakest_link(aa)
+            self.rigidity_matrix()
+            self.x = self.solve()
+            a = 1*(self.x[0:self.N] < self.thresholds)
+            # remove the previously broken bonds
+            aa = self.alpha - a
+
+        # aa = (self.x[0:self.N] < self.thresholds - self.tol)  # It return boolean vector
+        # # self.alpha = np.multiply(aa, 1)     # Need to multiply all term by 1 to get a vector of zeros and ones
+        # # print(self.alpha)
+        # while self.health_temp > sum(self.alpha):
+        #     self.health_temp = sum(self.alpha)
+        #     self.rigidity_matrix()
+        #     self.x = self.solve()
+        #     # Solving the system
+        #     # Looking for broken bonds
+        #     aa = (self.x[0:self.N] < self.thresholds - self.tol)  # It return boolean vector
+        #     self.alpha = np.multiply(aa, 1)     # Need to multiply all term by 1 to get a vector of zeros and ones
+        self.health = sum(self.alpha)
+       
+    def next_loading(self):
+        # print(self.alpha)
+        # print(self.alpha*(self.thresholds - self.x[0:self.N]))
+        next_threshold = min(ii for ii in (self.alpha*(self.thresholds - self.x[0:self.N])) if ii > 0)
+        # next_threshold = min(ii for ii in (self.alpha*(self.thresholds)) if ii > 0)
+        # print("Next threshold,", next_threshold)
+        ind = np.where(self.alpha*(self.thresholds - self.x[0:self.N]) == next_threshold)[0]
+        # ind = np.where(self.alpha*(self.thresholds) == next_threshold)[0]
+        # print(ind)
+        next_threshold = next_threshold + self.x[ind]
+        # next_threshold = next_threshold + self.x[ind]
+        # print("Next threshold,", next_threshold)
+        # print("x[ind]", self.x[ind])
+        self.z = self.z*(next_threshold/self.x[ind]) + self.tol # Next loading
+        # print("Next z ", self.z)
+        self.alpha[ind] = 0
     
-    def get_avalanches(self, thresholds):
-        size_alpha = len(thresholds)
-        size_alpha_temp = size_alpha
+    def get_avalanches(self):
         i = 0
-        alpha_ = np.ones(self.N) #Keeps track of broken units 
-        damage = [ ]
-        z = 0.01
-        tol = 1/self.N**2
-        while size_alpha > 0:
-            damage = np.append(damage, size_alpha_temp)
-            self.rigidity_matrix(alpha_)
-            self.x = self.solve(z)
-            # Solving the system
-            # Looking for broken bonds
-            aa = (self.x[0:self.N]<thresholds - tol)  # It return boolean vector
-            alpha_ = np.multiply(aa, 1)     # Need to multiply all term by 1 to get a vector of zeros and ones
-            # vector defining the state of a bond
-            # alpha[i] = 0: i'th bond is broken
-            # alpha[i] = 1: i'th bond is intact
-            size_alpha_temp = sum(alpha_)
-            while size_alpha_temp < size_alpha:
-                size_alpha = size_alpha_temp
-                #print(fracture.K.toarray())
-                self.rigidity_matrix(alpha_)
-                self.x = self.solve(z)
-                # Looking for broken bonds
-                aa = (self.x[0:self.N] < thresholds - tol)
-                alpha_ = np.multiply(aa, 1)
-                size_alpha_temp = sum(alpha_)
-                
-            try:    
-                next_threshold = min(ii for ii in (alpha_*(thresholds - self.x[0:self.N])) if ii > 0)
-                ind = np.where(alpha_*(thresholds - self.x[0:self.N]) == next_threshold)[0]
-                next_threshold = next_threshold+self.x[ind]
-                z = z*(next_threshold/self.x[ind]) # Next loading
-                alpha_[ind] = 0
-            except:
-                damage = np.append(damage, 0)
+        self.damage = np.append(self.damage, self.health)
+        # print(self.damage)
+        while self.health > 0:  
+            # print("health:",self.health)
+            # print(self.K.toarray())
+            try:
+                self.next_loading()
+                self.check_stability()
+                self.damage = np.append(self.damage, self.health)
+            except AssertionError as error:
+                print(error)
+                self.damage = np.append(self.damage, 0)
                 break
-                
-#             if i% 10 ==0: print(i, size_alpha_temp)
+
             i+=1
-        aav = -np.diff(damage)
+            # if i% 1000 ==0: print(i, self.health_temp)
+        aav = -np.diff(self.damage)
         aav = aav[np.nonzero(aav)]
         return aav
     
-    def time_avalanches(self, damage):
-        av_counter = []
-        av_counter = np.append(av_counter, damage[0])
-        for i in range(1, len(damage)):
-            if damage[i-1] == damage[i]:
-                pass
-            else:
-                av_counter = np.append(av_counter, damage[i])
-        return (len(av_counter) - np.sum(av_counter))
