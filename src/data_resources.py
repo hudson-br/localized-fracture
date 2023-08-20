@@ -84,9 +84,11 @@ def avalanche_statistics(file):
 
 
 def avalanche_distribution_from_obj(file):
-
+    import pickle 
+    import powerlaw
     fileObj = open(file, 'rb')
-    Obj = pickle.load(fileObj, encoding='latin1')
+    # Obj = pickle.load(fileObj, encoding='latin1')
+    Obj = pickle.load(fileObj)
     fileObj.close()
 
     N = sum(Obj[0].avalanches)
