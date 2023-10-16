@@ -10,6 +10,8 @@ class Fracture_Model_1:
         self.health = sum(self.alpha)
         self.health_temp = sum(self.alpha)
         self.damage = []
+        self.force = [0]
+        self.strain = [0]
         self.lbda = lbda
         self.lbda_J = lbda_J
         self.lbda_f = lbda_f
@@ -138,9 +140,13 @@ class Fracture_Model_1:
                 self.next_loading()
                 self.check_stability()
                 self.damage = np.append(self.damage, self.health)
+                self.force = np.append(self.force, sum(self.x[0:self.N]*self.alpha))
+                self.strain = np.append(self.strain, self.z)
             except AssertionError as error:
                 print(error)
                 self.damage = np.append(self.damage, 0)
+                self.force = np.append(self.force, 0)
+                self.strain = np.append(self.strain, self.z)
                 break
 
             i+=1

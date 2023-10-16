@@ -10,6 +10,10 @@ def save_avalanches(data, filename):
 def save_avalanches_csv(data,filename):
     with open(filename,'a') as f:
         np.savetxt(f,data, delimiter=",")
+        
+def save_stress_strain(data, filename):
+    with open(filename,'a') as f:
+        np.savetxt(f,data, delimiter=",")
 
 def save_avalanches_txt(data,filename):
 

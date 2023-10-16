@@ -38,6 +38,6 @@ thresholds = np.random.weibull(rho, N)
 filename = "N={}_lbda={}_lbdaf={}_lbdaJ={}_rho={}".format(N,lbda,lbda_f,round(lbda_J,2),rho)
 
 
-output_dir = "output/"
+output_dir = "output/" + filename + '/'
 if not os.path.exists(output_dir):
     os.makedirs(output_dir)
